@@ -28,7 +28,7 @@ from six.moves.urllib.request import urlretrieve
 from six.moves import cPickle as pickle
 
 # Config the matlotlib backend as plotting inline in IPython
-get_ipython().magic(u'matplotlib inline')
+# get_ipython().magic(u'matplotlib inline')
 
 
 # First, we'll download the dataset to our local machine. The data consists of characters rendered in a variety of fonts on a 28x28 image. The labels are limited to 'A' through 'J' (10 classes). The training set has about 500k and the testset 19000 labelled examples. Given these sizes, it should be possible to train models quickly on any machine.
@@ -114,6 +114,25 @@ test_folders = maybe_extract(test_filename)
 #
 # ---
 
+def show_examples(data_folders):
+    sample_size = 10
+    images = []
+    for folder in data_folders:
+        image_files = os.listdir(folder)
+        for image_index, image in enumerate(image_files):
+            image_file = os.path.join(folder, image)
+            if image_index == sample_size:
+                break
+            images.append(image_file)
+
+    for image_index, image in enumerate(images, start=1):
+        plt.subplot(10, sample_size, image_index)
+        img = plt.imread(image)
+        plt.axis('off')
+        plt.imshow(img, cmap=plt.cm.winter)
+    plt.show()
+#show_examples(train_folders)
+
 # Now let's load the data in a more manageable format. Since, depending on your computer setup you might not be able to fit it all in memory, we'll load each class into a separate dataset, store them on disk and curate them independently. Later we'll merge them into a single dataset of manageable size.
 #
 # We'll convert the entire dataset into a 3D array (image index, x, y) of floating point values, normalized to have approximately zero mean and standard deviation ~0.5 to make training easier down the road.
@@ -184,12 +203,61 @@ test_datasets = maybe_pickle(test_folders, 1800)
 #
 # ---
 
+def show_pickle(pickle_files):
+    sample_size = 10
+    num_classes = len(pickle_files)
+    images = np.ndarray((sample_size * num_classes, image_size, image_size),
+                         dtype=np.float32)
+    start_v = 0
+    end_v = sample_size
+    for _, pickle_file in enumerate(pickle_files):
+        try:
+            with open(pickle_file, 'rb') as f:
+                letter_set = pickle.load(f)
+                # let's shuffle the letters to have random validation and training set
+                np.random.shuffle(letter_set)
+                images[start_v:end_v, :, :] = letter_set[0:sample_size, :, :]
+                start_v += sample_size
+                end_v += sample_size
+        except Exception as e:
+            print('Unable to process data from', pickle_file, ':', e)
+            raise
+
+    for i in range(images.shape[0]):
+        plt.subplot(10, sample_size, i + 1)
+        plt.axis('off')
+        plt.imshow(images[i, :, :], cmap=plt.cm.gray)
+    plt.show()
+# show_pickle(train_datasets)
+
 # ---
 # Problem 3
 # ---------
 # Another check: we expect the data to be balanced across classes. Verify that.
 #
 # ---
+
+def check_balance(pickle_files):
+    tolerance = 10
+    num_classes = len(pickle_files)
+    num_data = []
+    for _, pickle_file in enumerate(pickle_files):
+        try:
+            with open(pickle_file, 'rb') as f:
+                letter_set = pickle.load(f)
+                num_data.append(letter_set.shape[0])
+        except Exception as e:
+            print('Unable to process data from', pickle_file, ':', e)
+            raise
+
+    mean = np.mean(num_data)
+    for label, num in enumerate(num_data):
+        if (abs(mean - num) > tolerance):
+            print('class %s: num %s while mean %s' % (label, num, mean))
+    plt.show()
+check_balance(train_datasets)
+check_balance(test_datasets)
+
 
 # Merge and prune the training data as needed. Depending on your computer setup, you might not be able to fit it all in memory, and you can tune `train_size` as needed. The labels will be stored into a separate array of integers 0 through 9.
 #
@@ -240,17 +308,11 @@ def merge_datasets(pickle_files, train_size, valid_size=0):
     return valid_dataset, valid_labels, train_dataset, train_labels
 
 
+pickle_file = 'notMNIST.pickle'
+
 train_size = 200000
 valid_size = 10000
 test_size = 10000
-
-valid_dataset, valid_labels, train_dataset, train_labels = merge_datasets(
-  train_datasets, train_size, valid_size)
-_, _, test_dataset, test_labels = merge_datasets(test_datasets, test_size)
-
-print('Training:', train_dataset.shape, train_labels.shape)
-print('Validation:', valid_dataset.shape, valid_labels.shape)
-print('Testing:', test_dataset.shape, test_labels.shape)
 
 
 # Next, we'll randomize the data. It's important to have the labels well shuffled for the training and test distributions to match.
@@ -262,10 +324,39 @@ def randomize(dataset, labels):
     shuffled_dataset = dataset[permutation,:,:]
     shuffled_labels = labels[permutation]
     return shuffled_dataset, shuffled_labels
-train_dataset, train_labels = randomize(train_dataset, train_labels)
-test_dataset, test_labels = randomize(test_dataset, test_labels)
-valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
 
+train_dataset = None
+train_labels = None
+test_dataset = None
+test_labels = None
+valid_dataset = None
+valid_labels = None
+if not os.path.exists(pickle_file):
+    valid_dataset, valid_labels, train_dataset, train_labels = merge_datasets(
+      train_datasets, train_size, valid_size)
+    _, _, test_dataset, test_labels = merge_datasets(test_datasets, test_size)
+
+    train_dataset, train_labels = randomize(train_dataset, train_labels)
+    test_dataset, test_labels = randomize(test_dataset, test_labels)
+    valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
+else:
+    print('Load compressed pickle to reuse')
+    try:
+        with open(pickle_file, 'rb') as f:
+            save = pickle.load(f)
+            train_dataset = save['train_dataset']
+            train_labels = save['train_labels']
+            valid_dataset = save['valid_dataset']
+            valid_labels = save['valid_labels']
+            test_dataset = save['test_dataset']
+            test_labels = save['test_labels']
+    except Exception as e:
+        print('Unable to save data to', pickle_file, ':', e)
+        raise
+
+print('Training:', train_dataset.shape, train_labels.shape)
+print('Validation:', valid_dataset.shape, valid_labels.shape)
+print('Testing:', test_dataset.shape, test_labels.shape)
 
 # ---
 # Problem 4
@@ -274,24 +365,42 @@ valid_dataset, valid_labels = randomize(valid_dataset, valid_labels)
 #
 # ---
 
+def show_dataset(dataset, labels):
+    sample_size = 10
+    for i in range(num_classes * sample_size):
+        plt.subplot(10, sample_size, i + 1)
+        plt.title(chr(ord('A') + labels[i]))
+        plt.axis('off')
+        plt.imshow(dataset[i, :, :], cmap=plt.cm.gray)
+    plt.show()
+# show_dataset(train_dataset, train_labels)
+# show_dataset(test_dataset, test_labels)
+# show_dataset(valid_dataset, valid_labels)
+
+
 # Finally, let's save the data for later reuse:
 
 # In[ ]:
 
-pickle_file = 'notMNIST.pickle'
-
 try:
-    f = open(pickle_file, 'wb')
-    save = {
-      'train_dataset': train_dataset,
-      'train_labels': train_labels,
-      'valid_dataset': valid_dataset,
-      'valid_labels': valid_labels,
-      'test_dataset': test_dataset,
-      'test_labels': test_labels,
-      }
-    pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
-    f.close()
+    if os.path.exists(pickle_file):
+        print('%s already present - Skipping saving compressed pickle.'
+              % pickle_file)
+    else:
+        f = open(pickle_file, 'wb')
+        save = {
+          'train_dataset': train_dataset,
+          'train_labels': train_labels,
+          'valid_dataset': valid_dataset,
+          'valid_labels': valid_labels,
+          'test_dataset': test_dataset,
+          'test_labels': test_labels,
+          }
+        pickle.dump(save, f, pickle.HIGHEST_PROTOCOL)
+        f.close()
+
+        statinfo = os.stat(pickle_file)
+        print('Compressed pickle size:', statinfo.st_size)
 except Exception as e:
     print('Unable to save data to', pickle_file, ':', e)
     raise
@@ -299,8 +408,6 @@ except Exception as e:
 
 # In[ ]:
 
-statinfo = os.stat(pickle_file)
-print('Compressed pickle size:', statinfo.st_size)
 
 
 # ---
@@ -315,6 +422,9 @@ print('Compressed pickle size:', statinfo.st_size)
 # - Create a sanitized validation and test set, and compare your accuracy on those in subsequent assignments.
 # ---
 
+
+
+
 # ---
 # Problem 6
 # ---------
@@ -326,3 +436,122 @@ print('Compressed pickle size:', statinfo.st_size)
 # Optional question: train an off-the-shelf model on all the data!
 #
 # ---
+train_dataset_flat = train_dataset.reshape(train_dataset.shape[0], -1)
+valid_dataset_flat = valid_dataset.reshape(valid_dataset.shape[0], -1)
+test_dataset_flat = test_dataset.reshape(test_dataset.shape[0], -1)
+num_feature = train_dataset_flat.shape[1]
+
+# 1. sklearn LinearRegression
+# Refer to scipy_2015_sklearn_tutorial/notebooks/02.1%20Supervised%20Learning%20-%20Classification.ipynb
+# add 200000 if you want
+if False:
+    for i in [50, 100, 1000, 5000]:
+        train_dataset_flat_new = train_dataset_flat[:i, :]
+        train_labels_new = train_labels[:i]
+
+        regressor = LogisticRegression(multi_class='multinomial', solver='lbfgs')
+        regressor.fit(train_dataset_flat_new, train_labels_new)
+        train_pred_labels = regressor.predict(train_dataset_flat_new)
+        valid_pred_labels = regressor.predict(valid_dataset_flat)
+        test_pred_labels = regressor.predict(test_dataset_flat)
+        print("num of training set:", i)
+        print("train score: %s mean: %s" %
+              (regressor.score(train_dataset_flat_new, train_labels_new),
+               np.mean(train_pred_labels == train_labels_new)))
+        print("valid score: %s mean: %s" %
+              (regressor.score(valid_dataset_flat, valid_labels),
+               np.mean(valid_pred_labels == valid_labels)))
+        print("test score: %s mean: %s" %
+              (regressor.score(test_dataset_flat, test_labels),
+               np.mean(test_pred_labels == test_labels)))
+## Results
+# num of training set: 50
+# train score: 1.0 mean: 1.0
+# valid score: 0.5998 mean: 0.5998
+# test score: 0.6516 mean: 0.6516
+# num of training set: 100
+# train score: 1.0 mean: 1.0
+# valid score: 0.7206 mean: 0.7206
+# test score: 0.788 mean: 0.788
+# num of training set: 1000
+# train score: 0.999 mean: 0.999
+# valid score: 0.7754 mean: 0.7754
+# test score: 0.845 mean: 0.845
+# num of training set: 5000
+# train score: 0.9728 mean: 0.9728
+# valid score: 0.7703 mean: 0.7703
+# test score: 0.8446 mean: 0.8446
+# num of training set: 200000
+# train score: 0.83876 mean: 0.83876
+# valid score: 0.8333 mean: 0.8333
+# test score: 0.9012 mean: 0.9012
+
+
+# 2. TensorFlow Logistic regression
+import tensorflow as tf
+
+train_labels_n = np.transpose(np.array([(train_labels == i).astype(int) for i in range(10)]))
+valid_labels_n = np.transpose(np.array([(valid_labels == i).astype(int) for i in range(10)]))
+test_labels_n = np.transpose(np.array([(test_labels == i).astype(int) for i in range(10)]))
+
+print('TensorFlow Logistic regression')
+print('Training:', train_dataset_flat.shape, train_labels_n.shape)
+print('Validation:', valid_dataset_flat.shape, valid_labels_n.shape)
+print('Testing:', test_dataset_flat.shape, test_labels_n.shape)
+
+X = tf.placeholder(tf.float32, [None, num_feature], name="input")
+Y = tf.placeholder(tf.float32, [None, num_classes], name="output")
+W = tf.Variable(tf.zeros([num_feature, num_classes]), name="weight")
+b = tf.Variable(tf.zeros([num_classes]), name="bias")
+
+Y_pred = tf.nn.softmax(tf.matmul(X, W) + b)
+cross_entropy = tf.reduce_mean(-tf.reduce_sum(Y * tf.log(Y_pred), reduction_indices= 1))
+
+learning_rate = 0.1
+optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(cross_entropy)
+training_epochs = 5 #50
+display_epoch = 1 #5
+batch_size = 100   # For each time, we will use 100 samples to update parameters
+n_train = train_dataset_flat.shape[0]
+
+correct_prediction = tf.equal(tf.argmax(Y_pred, 1), tf.argmax(Y, 1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+
+for i in [100, 1000, 5000, n_train]:
+    print("num of training set:", i)
+    train_dataset_flat_new = train_dataset_flat[:i, :]
+    train_labels_new = train_labels_n[:i, :]
+    new_n_train = train_dataset_flat_new.shape[0]
+    with tf.Session() as sess:
+        sess.run(tf.initialize_all_variables())
+        for epoch in range(training_epochs):
+            num_batch  = int(new_n_train / batch_size)
+            ran_idx =  np.random.permutation(new_n_train)
+            for i in range(num_batch):
+                X_batch = train_dataset_flat_new[ran_idx[i * batch_size: (i + 1) * batch_size], :]
+                Y_batch = train_labels_new[ran_idx[i * batch_size: (i + 1) * batch_size], :]
+                sess.run(optimizer, feed_dict = {X: X_batch, Y: Y_batch})
+
+            if (epoch+1) % display_epoch == 0:
+                cross_entropy_value = sess.run(cross_entropy, feed_dict={X: train_dataset_flat_new, Y: train_labels_new})
+                accuracy_value = accuracy.eval({X: train_dataset_flat_new, Y: train_labels_new})
+                print("(epoch {})".format(epoch+1))
+                print("[CrossEntropy / Training Accuracy] {:05.4f} / {:05.4f}".format(cross_entropy_value, accuracy_value))
+                print(" ")
+
+        print("Complete training")
+        cross_entropy_value = sess.run(cross_entropy, feed_dict={X: train_dataset_flat_new, Y: train_labels_new})
+        accuracy_value = accuracy.eval({X: train_dataset_flat_new, Y: train_labels_new})
+        print("Train [CrossEntropy / Training Accuracy] {:05.4f} / {:05.4f}".format(cross_entropy_value, accuracy_value))
+        cross_entropy_valid = sess.run(cross_entropy, feed_dict={X: valid_dataset_flat, Y: valid_labels_n})
+        accuracy_valid = accuracy.eval({X: valid_dataset_flat, Y: valid_labels_n})
+        print("Validation [CrossEntropy / Training Accuracy] {:05.4f} / {:05.4f}".format(cross_entropy_valid, accuracy_valid))
+        cross_entropy_test = sess.run(cross_entropy, feed_dict={X: test_dataset_flat, Y: test_labels_n})
+        accuracy_test = accuracy.eval({X: test_dataset_flat, Y: test_labels_n})
+        print("Testing [CrossEntropy / Training Accuracy] {:05.4f} / {:05.4f}".format(cross_entropy_test, accuracy_test))
+
+# Results
+# Complete training
+# Train [CrossEntropy / Training Accuracy] 0.6219 / 0.8354
+# Validation [CrossEntropy / Training Accuracy] 0.6332 / 0.8320
+# Testing [CrossEntropy / Training Accuracy] 0.3952 / 0.8970
