@@ -52,7 +52,7 @@ def show_dataset(dataset, labels):
         plt.subplot(10, sample_size, i + 1)
         plt.title(chr(ord('A') + labels[i]))
         plt.axis('off')
-        plt.imshow(dataset[i, :, :], cmap=plt.cm.gray)
+        plt.imshow(dataset[i, :, :], cmap=plt.get_cmap('gray'))
     plt.show()
 # show_dataset(train_dataset, train_labels)
 # show_dataset(test_dataset, test_labels)
@@ -293,3 +293,36 @@ learning_params = {
 # BREAK: TIME OVER
 # Complete training. Total time:5:00:13.045505
 # Testing [CrossEntropy / Training Accuracy] 0.2168 / 0.9653
+
+
+
+learning_params = {
+    'n_layer1': 4096,
+    'n_layer2': 2025,
+    'n_layer3': 1024,
+    'batch_size': 1024,
+    'dropout_probability': 0.5,
+    'training_epochs': 150000,
+    'max_test_time': 60 * 60 * 9,
+    'starter_learning_rate': 0.1,
+    'beta_regularization_value': 0.001
+}
+# saturated around 65 epoch
+# epoch complete: step 12089 num_training 12380160 time:5:29:17.438472
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.6011 / 0.8861
+# Validation [CrossEntropy / Training Accuracy] 0.6111 / 0.8849
+# epoch complete: step 12284 num_training 12579840 time:5:34:00.698868
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.5944 / 0.8856
+# Validation [CrossEntropy / Training Accuracy] 0.6024 / 0.8842
+# epoch complete: step 12479 num_training 12779520 time:5:38:48.527591
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.5954 / 0.8856
+# Validation [CrossEntropy / Training Accuracy] 0.5955 / 0.8858
+# epoch complete: step 12674 num_training 12979200 time:5:43:32.467080
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.5871 / 0.8855
+# Validation [CrossEntropy / Training Accuracy] 0.5885 / 0.8876
+# epoch complete: step 12869 num_training 13178880 time:5:48:17.051833
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.5898 / 0.8826
+# Validation [CrossEntropy / Training Accuracy] 0.5946 / 0.8833
+# BREAK: Validation CrossEntropy [now / previous] 0.5946 / 0.5885
+# Complete training. Total time:5:48:44.815504
+# Testing [CrossEntropy / Training Accuracy] 0.4216 / 0.9353
