@@ -106,26 +106,34 @@ def run_conv(params):
         return W, b
 
     def create_nn(X, W, b, dropout):
-        l1_conv = tf.nn.relu(tf.nn.dropout(tf.nn.bias_add(
-                             tf.nn.conv2d(X, W['L1_ConvF'], [1, 1, 1, 1], padding='SAME'),
-                             b['L1_b']), dropout, name="l1_conv"))
+        l1_conv = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(
+                                tf.nn.conv2d(X, W['L1_ConvF'], [1, 1, 1, 1], padding='SAME'),
+                                b['L1_b'])), dropout, name="l1_conv")
         l1_pool = tf.nn.max_pool(l1_conv, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-        l2_conv = tf.nn.relu(tf.nn.dropout(tf.nn.bias_add(
-                             tf.nn.conv2d(l1_pool, W['L2_ConvF'], [1, 1, 1, 1], padding='SAME'),
-                             b['L2_b']), dropout, name="l2_conv"))
+        l2_conv = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(
+                                tf.nn.conv2d(l1_pool, W['L2_ConvF'], [1, 1, 1, 1], padding='SAME'),
+                                b['L2_b'])), dropout, name="l2_conv")
         l2_pool = tf.nn.max_pool(l2_conv, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-        l3_conv = tf.nn.relu(tf.nn.dropout(tf.nn.bias_add(
-                     tf.nn.conv2d(l2_pool, W['L3_ConvF'], [1, 1, 1, 1], padding='SAME'),
-                     b['L3_b']), dropout, name="l3_conv"))
+        l3_conv = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(
+                                tf.nn.conv2d(l2_pool, W['L3_ConvF'], [1, 1, 1, 1], padding='SAME'),
+                                b['L3_b'])), dropout, name="l3_conv")
         l3_pool = tf.nn.avg_pool(l3_conv, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
         l3_output = tf.reshape(l3_pool, [-1, W['L4_W'].get_shape().as_list()[0]])
 
         l4_hidden = tf.nn.dropout(tf.nn.relu(tf.matmul(l3_output, W['L4_W']) + b['L4_b']), dropout, name="l4_hidden")
         l5_hidden = tf.nn.dropout(tf.nn.relu(tf.matmul(l4_hidden, W['L5_W']) + b['L5_b']), dropout, name="l5_hidden")
         logits = tf.nn.softmax(tf.matmul(l5_hidden, W['L6_W']) + b['L6_b'], name="logits")
-        return logits, l1_conv, l2_conv
+        out = {
+               'logits': logits,
+               'l1_conv': l1_conv,
+               'l2_conv': l2_conv,
+               'l3_conv': l3_conv,
+               'l4_hidden': l4_hidden,
+               'l5_hidden': l5_hidden,
+            }
+        return out
 
     # TODO: make it work.
 #     epoch complete: Train [CrossEntropy / Training Accuracy] 2.4094 / 0.0994
@@ -164,15 +172,15 @@ def run_conv(params):
         return W, b
 
     def create_nn_1to1(X, W, b, dropout):
-        l1_conv = tf.nn.relu(tf.nn.dropout(tf.nn.bias_add(
-                             tf.nn.conv2d(X, W['L1_ConvF'], [1, 1, 1, 1], padding='SAME'),
-                             b['L1_b']), dropout, name="l1_conv"))
+        l1_conv = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(
+                                tf.nn.conv2d(X, W['L1_ConvF'], [1, 1, 1, 1], padding='SAME'),
+                                b['L1_b'])), dropout, name="l1_conv")
         l1_conv1to1 = tf.nn.relu(tf.nn.conv2d(l1_conv, W['L1_Conv1to1F'], [1, 1, 1, 1], padding='SAME'))
         l1_pool = tf.nn.max_pool(l1_conv1to1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-        l2_conv = tf.nn.relu(tf.nn.dropout(tf.nn.bias_add(
-                             tf.nn.conv2d(l1_pool, W['L2_ConvF'], [1, 1, 1, 1], padding='SAME'),
-                             b['L2_b']), dropout, name="l2_conv"))
+        l2_conv = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(
+                                tf.nn.conv2d(l1_pool, W['L2_ConvF'], [1, 1, 1, 1], padding='SAME'),
+                                b['L2_b'])), dropout, name="l2_conv")
         # TODO: double 1to1 is right?
         l2_conv1to1_1 = tf.nn.relu(tf.nn.conv2d(l2_conv, W['L2_Conv1to1F1'], [1, 1, 1, 1], padding='SAME'))
         l2_conv1to1_2 = tf.nn.relu(tf.nn.conv2d(l2_conv1to1_1, W['L2_Conv1to1F2'], [1, 1, 1, 1], padding='SAME'))
@@ -188,9 +196,18 @@ def run_conv(params):
         l4_hidden = tf.nn.dropout(tf.nn.relu(tf.matmul(l3_output, W['L4_W']) + b['L4_b']), dropout, name="l4_hidden")
         l5_hidden = tf.nn.dropout(tf.nn.relu(tf.matmul(l4_hidden, W['L5_W']) + b['L5_b']), dropout, name="l5_hidden")
         logits = tf.nn.softmax(tf.matmul(l5_hidden, W['L6_W']) + b['L6_b'], name="logits")
-        return logits, l1_conv, l2_conv
+        out = {
+               'logits': logits,
+               'l1_conv': l1_conv,
+               'l2_conv': l2_conv,
+               'l3_conv': l3_conv,
+               'l4_hidden': l4_hidden,
+               'l5_hidden': l5_hidden,
+            }
+        return out
 
     # X. Glorot and Y. Bengio, "Understanding the difficulty of training deep feedforward neural networks", 2010.
+    # http://www.deeplearning.net/tutorial/mlp.html#weight-initialization
     def xavier_init(n_inputs, n_outputs, uniform=True):
         if uniform:
             init_range = tf.sqrt(6.0 / (n_inputs + n_outputs))
@@ -205,7 +222,8 @@ def run_conv(params):
         X = tf.placeholder(tf.float32, [None, image_size, image_size, num_channels], name="input")
         Y = tf.placeholder(tf.float32, [None, num_labels], name="output")
         dropout_prob = tf.placeholder(tf.float32, name="dropout")
-        Y_pred, l1_conv, l2_conv = create_nn(X, W, b, dropout_prob)
+        nn_internal = create_nn(X, W, b, dropout_prob)
+        Y_pred = nn_internal['logits']
 
         beta = tf.constant(params['beta_regularization_value'], tf.float32, name="beta")
         # TODO: need to regularize 'L1_ConvF'?
@@ -213,10 +231,12 @@ def run_conv(params):
         cross_entropy = tf.reduce_mean(-tf.reduce_sum(Y * tf.log(Y_pred), reduction_indices= 1)) + l2_loss
 
         global_step = tf.Variable(0, trainable=False)
-        learning_rate = tf.train.exponential_decay(params['starter_learning_rate'], global_step,
-                                             100000, 0.96, staircase=True)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(cross_entropy)
-#         optimizer = tf.train.AdamOptimizer(learning_rate=starter_learning_rate).minimize(cross_entropy)
+        gd_learning_rate = tf.train.exponential_decay(params['starter_learning_rate'], global_step, 100000, 0.96, staircase=True)
+        optimizer = tf.train.GradientDescentOptimizer(gd_learning_rate).minimize(cross_entropy)
+        # Adadelta are "safer" because they don't depend so strongly on setting of learning rates
+        # http://cs.stanford.edu/people/karpathy/convnetjs/demo/trainers.html
+#         optimizer = tf.train.AdadeltaOptimizer(learning_rate=0.001).minimize(cross_entropy)
+#         optimizer = tf.train.AdamOptimizer(learning_rate=0.001).minimize(cross_entropy)
 
         correct_prediction = tf.equal(tf.argmax(Y_pred, 1), tf.argmax(Y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
@@ -261,8 +281,8 @@ def run_conv(params):
                 if (step % threshold_print == 0):
                     print("Minibatch loss at num_training %d: %f accuracy: %.1f%%" % (accumulated_n_training, l, a * 100))
 
-            print("epoch complete: step %d num_training %d time:%s" %
-                   (accumulated_step, accumulated_n_training, timedelta(seconds=(time.time() - start_time))))
+            print("epoch complete: epoch:%d step:%d num_training:%d time:%s" %
+                   (epoch, accumulated_step, accumulated_n_training, timedelta(seconds=(time.time() - start_time))))
             # remove it in fast machine
             max_n_training = 50000
             start = 0
@@ -295,19 +315,31 @@ def run_conv(params):
         plt.show()
 
         # Visual representation of hidden layers
-        def show_layer(layer):
+        def show_layer(layers):
             width = 10
-            for i in range(layer.shape[3]):
-                plt.subplot(width, width, i + 1)
-                plt.axis('off')
-                plt.imshow(layer[0, :, :, i], cmap=plt.get_cmap('gray'))
+            index = 1
+            for i, layer in enumerate(layers, start=1):
+                for j in range(layer.shape[3]):
+                    if (index > width * width):
+                        break
+                    plt.subplot(width, width, index)
+                    if (j == 0):
+                        plt.title("L" + str(i))
+                    index += 1
+                    plt.axis('off')
+                    plt.imshow(layer[0, :, :, j], cmap=plt.get_cmap('gray'))
             plt.show()
 
         batch_data = train_dataset[random_index[0:1], :, :, :]
-        l1_conv_layer, l2_conv_layer = session.run([l1_conv, l2_conv],
+        l1_conv_layer, l2_conv_layer, l3_conv_layer = session.run([nn_internal['l1_conv'], nn_internal['l2_conv'], nn_internal['l3_conv']],
                                                    feed_dict={X: batch_data, dropout_prob: 1})
-        show_layer(l1_conv_layer)
-        show_layer(l2_conv_layer)
+        layers = [l1_conv_layer, l2_conv_layer, l3_conv_layer]
+        show_layer(layers)
+        batch_data = train_dataset[random_index[1:2], :, :, :]
+        l1_conv_layer, l2_conv_layer, l3_conv_layer = session.run([nn_internal['l1_conv'], nn_internal['l2_conv'], nn_internal['l3_conv']],
+                                                   feed_dict={X: batch_data, dropout_prob: 1})
+        layers = [l1_conv_layer, l2_conv_layer, l3_conv_layer]
+        show_layer(layers)
 
 # Gabriel configuration in
 # http://yaroslavvb.blogspot.com/2011/09/notmnist-dataset.html?showComment=1462342783838#c3340894427566315850
@@ -320,8 +352,8 @@ learning_params = {
     'hidden_n_output_2': 128,
     'batch_size': 128,
     'dropout_probability': 0.7,
-    'training_epochs': 10000,
-    'max_test_time': 60 * 60 * 9,
+    'training_epochs': 300,
+    'max_test_time': 60 * 30,
     'starter_learning_rate': 0.1,
     'beta_regularization_value': 0.001
 }
@@ -351,3 +383,43 @@ learning_params = {
 # Validation [CrossEntropy / Training Accuracy] 0.4617 / 0.9004
 # Complete training. Total time:0:05:46.011102
 # Testing [CrossEntropy / Training Accuracy] 0.3068 / 0.9508
+
+# 171k parameters
+learning_params = {
+    'patch_size': 3,
+    'depth_1': 8,
+    'depth_2': 16,
+    'depth_3': 32,
+    'hidden_n_output_1': 256,
+    'hidden_n_output_2': 128,
+    'batch_size': 128,
+    'dropout_probability': 0.7,
+    'training_epochs': 10000,
+    'max_test_time': 60 * 60 * 9,
+    'starter_learning_rate': 0.1,
+    'beta_regularization_value': 0.001
+}
+# epoch complete: step 267101 num_training 34189056 time:8:48:56.779424
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2758 / 0.9344
+# Validation [CrossEntropy / Training Accuracy] 0.2961 / 0.9263
+# epoch complete: step 268663 num_training 34388992 time:8:51:04.722086
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2702 / 0.9340
+# Validation [CrossEntropy / Training Accuracy] 0.2911 / 0.9280
+# epoch complete: step 270225 num_training 34588928 time:8:53:12.534637
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2735 / 0.9335
+# Validation [CrossEntropy / Training Accuracy] 0.2967 / 0.9250
+# epoch complete: step 271787 num_training 34788864 time:8:55:17.339205
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2740 / 0.9330
+# Validation [CrossEntropy / Training Accuracy] 0.2921 / 0.9249
+# epoch complete: step 273349 num_training 34988800 time:8:57:26.478109
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2683 / 0.9348
+# Validation [CrossEntropy / Training Accuracy] 0.2926 / 0.9286
+# epoch complete: step 274911 num_training 35188736 time:8:59:38.210218
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2729 / 0.9347
+# Validation [CrossEntropy / Training Accuracy] 0.2935 / 0.9288
+# epoch complete: step 276473 num_training 35388672 time:9:01:38.853269
+# epoch complete: Train [CrossEntropy / Training Accuracy] 0.2745 / 0.9331
+# Validation [CrossEntropy / Training Accuracy] 0.2966 / 0.9262
+# BREAK: TIME OVER
+# Complete training. Total time:9:01:57.943160
+# Testing [CrossEntropy / Training Accuracy] 0.1643 / 0.9698
