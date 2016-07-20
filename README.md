@@ -108,3 +108,37 @@ BREAK: TIME OVER
 Complete training. Total time:9:01:57.943160
 Testing [CrossEntropy / Training Accuracy] 0.1643 / 0.9698
 ```
+
+## `word2vec`
+* Use skip gram algorithm
+ * check [CS224d: Deep Learning for Natural Language Processing](http://cs224d.stanford.edu/lecture_notes/notes1.pdf)
+ * The implementation uses [sampled softmax](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/ops/nn.py#L1127), rather than Negative Sampling, which Mikolov used in his paper.
+ * In my opinion, sampled softmax is more intuitive than Mikolov's Negative Sampling, which is weird sigmoid approximation.
+ * The basic idea for both approximation is same. Choose small number of negative samples.
+* TODO: implement [GloVe](http://nlp.stanford.edu/pubs/glove.pdf)
+
+* Results
+```
+Average loss at step 96000: 3.738376
+Average loss at step 98000: 3.848188
+Average loss at step 100000: 3.819818
+Nearest to often: usually, sometimes, generally, many, commonly, now, these, typically,
+Nearest to some: many, these, other, several, those, different, all, are,
+Nearest to were: are, was, have, had, be, been, several, many,
+Nearest to used: considered, referred, known, use, steinberg, found, available, frequent,
+Nearest to to: in, would, for, and, will, can, it, may,
+Nearest to see: e, known, called, external, list, tragedies, may, will,
+Nearest to years: year, time, centuries, bc, months, hours, shearer, schedules,
+Nearest to for: of, to, and, in, with, but, on, as,
+Nearest to world: war, presentations, hellboy, astrodome, befell, ally, lepidus, mid,
+Nearest to between: over, about, minoan, on, with, neq, howlin, algirdas,
+Nearest to d: b, c, f, l, t, r, e, n,
+Nearest to been: become, were, be, was, suggested, come, has, have,
+Nearest to state: city, general, teaches, government, encrypted, university, hellas, slocum,
+Nearest to no: there, any, not, this, a, pipelined, dingo, little,
+Nearest to UNK: one, two, and, isbn, seven, eight, five, by,
+Nearest to people: those, who, them, some, jewish, groups, american, books,
+```
+
+* 2D TSNE (t-distributed Stochastic Neighbor Embedding) for 400 frequent words
+![Alt text](tensorflow_examples/images/word2vec.png "Conv layers screenshot")
