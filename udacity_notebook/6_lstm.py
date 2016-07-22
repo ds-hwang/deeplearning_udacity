@@ -73,7 +73,7 @@ print(valid_size, valid_text[:64])
 # Utility functions to map characters to vocabulary IDs and back.
 
 # In[ ]:
-
+# vocabulary_size == 27
 vocabulary_size = len(string.ascii_lowercase) + 1 # [a-z] + ' '
 first_letter = ord(string.ascii_lowercase[0])
 
@@ -149,6 +149,8 @@ valid_batches = BatchGenerator(valid_text, 1, 1)
 
 print(batches2string(train_batches.next()))
 print(batches2string(train_batches.next()))
+print(batches2string(train_batches.next()))
+print(batches2string(valid_batches.next()))
 print(batches2string(valid_batches.next()))
 print(batches2string(valid_batches.next()))
 
@@ -175,7 +177,9 @@ def sample_distribution(distribution):
 def sample(prediction):
     """Turn a (column) prediction into 1-hot encoded samples."""
     p = np.zeros(shape=[1, vocabulary_size], dtype=np.float)
+    # randomness prevents from repeating the same phase.
     p[0, sample_distribution(prediction[0])] = 1.0
+#     p[0, np.argmax(prediction[0], 0)] = 1.0
     return p
 
 def random_distribution():
@@ -195,20 +199,20 @@ with graph.as_default():
 
     # Parameters:
     # Input gate: input, previous output, and bias.
-    ix = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-    im = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
+    iw = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
+    iu = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
     ib = tf.Variable(tf.zeros([1, num_nodes]))
     # Forget gate: input, previous output, and bias.
-    fx = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-    fm = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
+    fw = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
+    fu = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
     fb = tf.Variable(tf.zeros([1, num_nodes]))
-    # Memory cell: input, state and bias.
-    cx = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-    cm = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
-    cb = tf.Variable(tf.zeros([1, num_nodes]))
+    # New memory cell: input, state and bias.
+    mw = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
+    mu = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
+    mb = tf.Variable(tf.zeros([1, num_nodes]))
     # Output gate: input, previous output, and bias.
-    ox = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
-    om = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
+    ow = tf.Variable(tf.truncated_normal([vocabulary_size, num_nodes], -0.1, 0.1))
+    ou = tf.Variable(tf.truncated_normal([num_nodes, num_nodes], -0.1, 0.1))
     ob = tf.Variable(tf.zeros([1, num_nodes]))
     # Variables saving state across unrollings.
     saved_output = tf.Variable(tf.zeros([batch_size, num_nodes]), trainable=False)
@@ -218,22 +222,22 @@ with graph.as_default():
     b = tf.Variable(tf.zeros([vocabulary_size]))
 
     # Definition of the cell computation.
-    def lstm_cell(i, o, state):
+    def lstm_cell(i, h, state):
         """Create a LSTM cell. See e.g.: http://arxiv.org/pdf/1402.1128v1.pdf
         Note that in this formulation, we omit the various connections between the
         previous state and the gates."""
-        input_gate = tf.sigmoid(tf.matmul(i, ix) + tf.matmul(o, im) + ib)
-        forget_gate = tf.sigmoid(tf.matmul(i, fx) + tf.matmul(o, fm) + fb)
-        update = tf.matmul(i, cx) + tf.matmul(o, cm) + cb
-        state = forget_gate * state + input_gate * tf.tanh(update)
-        output_gate = tf.sigmoid(tf.matmul(i, ox) + tf.matmul(o, om) + ob)
+        input_gate = tf.sigmoid(tf.matmul(i, iw) + tf.matmul(h, iu) + ib) # batch_size x num_nodes
+        forget_gate = tf.sigmoid(tf.matmul(i, fw) + tf.matmul(h, fu) + fb) # batch_size x num_nodes
+        new_memory_cell = tf.matmul(i, mw) + tf.matmul(h, mu) + mb # batch_size x num_nodes
+        state = forget_gate * state + input_gate * tf.tanh(new_memory_cell) # batch_size x num_nodes
+        output_gate = tf.sigmoid(tf.matmul(i, ow) + tf.matmul(h, ou) + ob) # batch_size x num_nodes
         return output_gate * tf.tanh(state), state
 
     # Input data.
     train_data = list()
     for _ in range(num_unrollings + 1):
         train_data.append(
-          tf.placeholder(tf.float32, shape=[batch_size,vocabulary_size]))
+          tf.placeholder(tf.float32, shape=[batch_size, vocabulary_size]))
     train_inputs = train_data[:num_unrollings]
     train_labels = train_data[1:]  # labels are inputs shifted by one time step.
 
@@ -306,6 +310,7 @@ with tf.Session(graph=graph) as session:
               'Average loss at step %d: %f learning rate: %f' % (step, mean_loss, lr))
             mean_loss = 0
             labels = np.concatenate(list(batches)[1:])
+            # PP = exp(CE) = exp(-log(prediction)) = 1/prediction. max PP = 1 / (1/27) = 27
             print('Minibatch perplexity: %.2f' % float(
               np.exp(logprob(predictions, labels))))
             if step % (summary_frequency * 10) == 0:
@@ -336,7 +341,9 @@ with tf.Session(graph=graph) as session:
 # Problem 1
 # ---------
 #
-# You might have noticed that the definition of the LSTM cell involves 4 matrix multiplications with the input, and 4 matrix multiplications with the output. Simplify the expression by using a single matrix multiply for each, and variables that are 4 times larger.
+# You might have noticed that the definition of the LSTM cell involves 4 matrix multiplications with the input,
+# and 4 matrix multiplications with the output.
+# Simplify the expression by using a single matrix multiply for each, and variables that are 4 times larger.
 #
 # ---
 
@@ -344,7 +351,9 @@ with tf.Session(graph=graph) as session:
 # Problem 2
 # ---------
 #
-# We want to train a LSTM over bigrams, that is pairs of consecutive characters like 'ab' instead of single characters like 'a'. Since the number of possible bigrams is large, feeding them directly to the LSTM using 1-hot encodings will lead to a very sparse representation that is very wasteful computationally.
+# We want to train a LSTM over bigrams, that is pairs of consecutive characters like 'ab' instead of single characters like 'a'.
+# Since the number of possible bigrams is large, feeding them directly to the LSTM using 1-hot encodings will lead to
+# a very sparse representation that is very wasteful computationally.
 #
 # a- Introduce an embedding lookup on the inputs, and feed the embeddings to the LSTM cell instead of the inputs themselves.
 #
