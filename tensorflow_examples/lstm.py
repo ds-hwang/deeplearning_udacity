@@ -26,6 +26,7 @@ def lstm(params):
     data, count, dictionary, embeddings, normalized_embeddings, weights, biases = word2vec.get_word2vec(2, False)
     words_size = embeddings.shape[0]
     embedding_size = embeddings.shape[1]
+    print('Most common words (+UNK)', count[:5])
     print('embedding size:%s data:%s' % (embedding_size, [dictionary[word] for word in data[:100]]))
 
     # Create a small validation set.
@@ -54,7 +55,7 @@ def lstm(params):
             """Generate a single batch from the current cursor position in the data."""
             batch = np.zeros(shape=(self._batch_size, embedding_size), dtype=np.float)
             for b in range(self._batch_size):
-                batch[b] = embeddings[self._text[self._cursor[b]]]
+                batch[b] = normalized_embeddings[self._text[self._cursor[b]]]
                 self._cursor[b] = (self._cursor[b] + 1)
             if self._cursor[self._batch_size - 1] == self._text_size:
                 self._cursor = self._cursor_boundary[:]
@@ -113,8 +114,11 @@ def lstm(params):
                 'L2_W': tf.Variable(tf.truncated_normal([p_num_nodes, p_num_nodes * 4], mean=0, stddev=0.1, name="L2_W")),
                 'L2_U': tf.Variable(tf.truncated_normal([p_num_nodes, p_num_nodes * 4], mean=0, stddev=0.1, name="L2_U")),
                 'L2_b': tf.Variable(tf.zeros([1, p_num_nodes * 4]), name="L2_b"),
-                'L3_W': tf.Variable(tf.truncated_normal([p_num_nodes, embedding_size], mean=0, stddev=0.1, name="L2_W")),
-                'L3_b': tf.Variable(tf.zeros([embedding_size]), name="L3_b"),
+                'L3_W': tf.Variable(tf.truncated_normal([p_num_nodes, p_num_nodes * 4], mean=0, stddev=0.1, name="L3_W")),
+                'L3_U': tf.Variable(tf.truncated_normal([p_num_nodes, p_num_nodes * 4], mean=0, stddev=0.1, name="L3_U")),
+                'L3_b': tf.Variable(tf.zeros([1, p_num_nodes * 4]), name="L3_b"),
+                'L4_W': tf.Variable(tf.truncated_normal([p_num_nodes, embedding_size], mean=0, stddev=0.1, name="L4_W")),
+                'L4_b': tf.Variable(tf.zeros([embedding_size]), name="L4_b"),
             }
 
             return W
@@ -139,6 +143,8 @@ def lstm(params):
                 'c1': tf.Variable(tf.zeros([batch_size, p_num_nodes]), trainable=False, name="c1"),
                 'h2': tf.Variable(tf.zeros([batch_size, p_num_nodes]), trainable=False, name="h2"),
                 'c2': tf.Variable(tf.zeros([batch_size, p_num_nodes]), trainable=False, name="c2"),
+                'h3': tf.Variable(tf.zeros([batch_size, p_num_nodes]), trainable=False, name="h3"),
+                'c3': tf.Variable(tf.zeros([batch_size, p_num_nodes]), trainable=False, name="c3"),
             }
 
             return inputs, last_state
@@ -158,52 +164,43 @@ def lstm(params):
             h_next = output_gate * tf.tanh(c_next)
             return h_next, c_next
 
-        def create_model(W, inputs, last_state, norm_embeddings):
-            h2s = list()
+        def create_model(W, inputs, last_state):
+            ys = list()
             h1 = last_state['h1']
             c1 = last_state['c1']
             h2 = last_state['h2']
             c2 = last_state['c2']
+            h3 = last_state['h3']
+            c3 = last_state['c3']
             # construct 2 layer LSTM
             for x in inputs['inputs']:
                 h1, c1 = lstm_cell(x, h1, c1, W['L1_W'], W['L1_U'], W['L1_b'])
                 x2 = tf.nn.dropout(h1, inputs['dropout'], name="dropout")
                 h2, c2 = lstm_cell(x2, h2, c2, W['L2_W'], W['L2_U'], W['L2_b'])
-                h2s.append(h2)
-
-            def gather_2d(params, indices):
-                # we want output[i] = params[i,indices[i]]
-                params_shape = params.get_shape().as_list()
-                indices_flattened = tf.cast(tf.range(0, params_shape[0]) * params_shape[1], tf.int64) + indices
-                return tf.gather(tf.reshape(params, [-1]),  # flatten input
-                              indices_flattened)  # use flattened indices
+                x3 = tf.nn.dropout(h2, inputs['dropout'], name="dropout")
+                h3, c3 = lstm_cell(x3, h3, c3, W['L3_W'], W['L3_U'], W['L3_b'])
+                ys.append(h3)
 
             # State saving across unrollings.
             with tf.control_dependencies([last_state['h1'].assign(h1),
                                           last_state['c1'].assign(c1),
                                           last_state['h2'].assign(h2),
-                                          last_state['c2'].assign(c2)]):
+                                          last_state['c2'].assign(c2),
+                                          last_state['h3'].assign(h3),
+                                          last_state['c3'].assign(c3)]):
                 # Classifier.
-                logits = tf.nn.xw_plus_b(tf.concat(0, h2s), W['L3_W'], W['L3_b'])
-                # 640 x 50000
-                logits_onehot = tf.matmul(logits, norm_embeddings)
-                # stabilize numerical computation (i.e. big_num / big_num)
-                logits_onehot = logits_onehot - tf.expand_dims(tf.reduce_max(logits_onehot, reduction_indices=[1]), 1)
-                logits_exp = tf.exp(logits_onehot)
-                # 640
-                logits_denominator = tf.reduce_sum(logits_exp, 1)
-                # 640
-                Y = tf.argmax(tf.matmul(tf.concat(0, inputs['labels']), norm_embeddings), 1)
-                # 640
-                Y_pred = gather_2d(logits_exp, Y)
-                # manual softmax to compute only Y element.
-                Y_pred = tf.div(Y_pred, logits_denominator)
-                loss = tf.reduce_mean(-tf.log(Y_pred))
+                Y_pred = tf.nn.xw_plus_b(tf.concat(0, ys), W['L4_W'], W['L4_b'])
+                norm = tf.sqrt(tf.reduce_sum(tf.square(Y_pred), 1, keep_dims=True))
+                normalized_Y_pred = Y_pred / norm
+                Y = tf.concat(0, inputs['labels'])
+                l2_loss = params['beta_regularization_value'] * (
+                  tf.nn.l2_loss(W['L1_W']) + tf.nn.l2_loss(W['L2_W']) +
+                  tf.nn.l2_loss(W['L3_W']) + tf.nn.l2_loss(W['L4_W']))
+                loss = tf.contrib.losses.cosine_distance(normalized_Y_pred, Y, dim=1) + l2_loss
 
             model = {
                'loss': loss,
                'Y_pred': Y_pred,
-               'logits_exp': logits_exp,
             }
             return model
 
@@ -214,29 +211,40 @@ def lstm(params):
         inputs, last_state = create_variables(p_batch_size, p_num_unrollings)
 
         # Unrolled LSTM loop.
-        model = create_model(W, inputs, last_state, norm_embeddings)
+        model = create_model(W, inputs, last_state)
 
         # Optimizer.
         global_step = tf.Variable(0)
         learning_rate = tf.train.exponential_decay(
-          10.0, global_step, 5000, 0.1, staircase=True)
+          params['start_learning_rate'], global_step, 5000, 0.1, staircase=True)
         optimizer = tf.train.GradientDescentOptimizer(learning_rate)
         gradients, v = zip(*optimizer.compute_gradients(model['loss']))
         gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
         optimizer = optimizer.apply_gradients(
           zip(gradients, v), global_step=global_step)
 
+        grad_sum = [tf.sqrt(tf.reduce_mean(tf.square(gradient))) for gradient in gradients[:len(gradients)-2]]
+        v_sum = [tf.sqrt(tf.reduce_mean(tf.square(variable))) for variable in v[:len(gradients)-2]]
+        grad_v_sum = [grad / v for grad, v in zip(grad_sum, v_sum)]
+        grad_sum_string = tf.Print(grad_sum, [grad_sum], message="grad_sum: ")
+        v_sum_string = tf.Print(v_sum, [v_sum], message="v_sum: ")
+        grad_v_sum_string = tf.Print(grad_v_sum, [grad_v_sum], message="grad_v_sum: ")
+
         # Sampling and validation eval: batch 1, no unrolling.
         sample_batch_size = 1
         sample_num_unrollings = 1
         sample_inputs, sample_last_state = create_variables(sample_batch_size, sample_num_unrollings)
-        sample_model = create_model(W, sample_inputs, sample_last_state, norm_embeddings)
+        sample_model = create_model(W, sample_inputs, sample_last_state)
         reset_sample_state = tf.group(
           sample_last_state['h1'].assign(tf.zeros([sample_batch_size, p_num_nodes])),
           sample_last_state['c1'].assign(tf.zeros([sample_batch_size, p_num_nodes])),
           sample_last_state['h2'].assign(tf.zeros([sample_batch_size, p_num_nodes])),
-          sample_last_state['c2'].assign(tf.zeros([sample_batch_size, p_num_nodes])))
-        sample_next = tf.nn.top_k(sample_model['logits_exp'], p_max_k)[1]
+          sample_last_state['c2'].assign(tf.zeros([sample_batch_size, p_num_nodes])),
+          sample_last_state['h3'].assign(tf.zeros([sample_batch_size, p_num_nodes])),
+          sample_last_state['c3'].assign(tf.zeros([sample_batch_size, p_num_nodes])))
+
+        similarity = tf.matmul(sample_model['Y_pred'], norm_embeddings)
+        sample_next = tf.nn.top_k(similarity, p_max_k)[1]
 
         # Add ops to save and restore all the variables.
         saver = tf.train.Saver()
@@ -271,16 +279,13 @@ def lstm(params):
                   [optimizer, model['loss'], learning_rate], feed_dict=inputs_dict)
                 mean_loss += loss_e
                 if step % p_summary_frequency == 0:
-                    # Save the variables to disk.
-                    save_path = saver.save(session, params['savefile'])
-
                     mean_loss = mean_loss / p_summary_frequency
                     # The mean loss is an estimate of the loss over the last few batches.
                     # PP = exp(CE) = exp(-log(prediction)) = 1/prediction. max PP = 1 / (1/50000) = 50000
                     print(
-                      'Average loss at step(%d):%f perplexity:%.2f learning rate:%.2f time:%s saved:%s' %
-                      (step, mean_loss, np.exp(mean_loss), learning_rate_e,
-                        timedelta(seconds=(time.time() - start_time)), save_path))
+                      'Average loss at step(%d):%f learning rate:%.2f time:%s' %
+                      (step, mean_loss, learning_rate_e,
+                        timedelta(seconds=(time.time() - start_time))))
                     mean_loss = 0
 
                     def sample(candiate_indices):
@@ -288,9 +293,10 @@ def lstm(params):
                         k = int(abs(random.normalvariate(0, p_max_k/2))) % p_max_k
                         index = candiate_indices[k]
                         # Skip UNK
-                        while index == 0:
-                            k = int(abs(random.normalvariate(0, p_max_k/2))) % p_max_k
-                            index = candiate_indices[k]
+                        if len(candiate_indices) > 1:
+                            while index == 0:
+                                k = int(abs(random.normalvariate(0, p_max_k/2))) % p_max_k
+                                index = candiate_indices[k]
                         return index
 
                     if step % (p_summary_frequency * 10) == 0:
@@ -309,6 +315,9 @@ def lstm(params):
                             print(sentence)
                         print('=' * 80)
 
+                        # Save the variables to disk.
+                        save_path = saver.save(session, params['savefile'])
+
                         # Measure validation set perplexity.
                         valid_mean_loss = 0
                         reset_sample_state.run()
@@ -322,19 +331,22 @@ def lstm(params):
                             valid_loss = session.run([sample_model['loss']],
                                              feed_dict=sample_feeds)
                             valid_mean_loss += valid_loss[0]
-                        print('Validation set perplexity: %.2f.' %
-                              (np.exp(valid_mean_loss / valid_size)))
+                        print('Validation set loss: %.2f. saved:%s' %
+                          (valid_mean_loss / valid_size, save_path))
+
 
 if __name__ == "__main__":
     # check karpathy configuration. https://github.com/karpathy/char-rnn/blob/master/train.lua#L38
     params = {
       'batch_size': 256,
-      'epochs': 2,
+      'epochs': 20,
       'num_unrollings': 10,
       # LSTM hidden layer
-      'num_nodes': 128,
+      'num_nodes': 256,
       # refer to this [article](http://arxiv.org/abs/1409.2329)
       'dropout': 0.5,
+      'start_learning_rate': 10.0,
+      'beta_regularization_value': 0.00001,
       # Generator needs some randomness to prevent from repeating same phase.
       'max_k': 5,
       'summary_frequency': 10,
